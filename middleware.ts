@@ -17,11 +17,15 @@ export async function middleware(request: NextRequest) {
 
     try {
         return await updateSession(request)
-    } catch (e: any) {
+    } catch (e: unknown) {
         // Return 500 with exact error for debugging Vercel Edge constraints
-        console.error('Middleware crashed:', e.message, e.stack);
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        const errorStack = e instanceof Error ? e.stack : 'No stack trace';
+
+        console.error('Middleware crashed:', errorMessage, errorStack);
+
         return new NextResponse(
-            `Middleware invocation failed: ${e.message}\nStack: ${e.stack}`,
+            `Middleware invocation failed: ${errorMessage}\nStack: ${errorStack}`,
             { status: 500, headers: { 'content-type': 'text/plain' } }
         );
     }
@@ -34,11 +38,8 @@ export const config = {
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
-         * - checkoutpage (public landing)
-         * - login (auth)
-         * - api (backend routes)
-         * - auth (supabase auth callback)
+         * Feel free to modify this pattern to include more paths.
          */
-        '/((?!_next/static|_next/image|favicon.ico|checkoutpage|login|api|auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }
