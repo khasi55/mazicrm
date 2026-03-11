@@ -15,13 +15,16 @@ const ALLOWED_IPS = [
 export async function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname;
 
-    // 🔒 Dashboard Protection Logic
-    // Protect /dashboard and other sensitive routes
-    // 🛡️ IP WHITELIST DISABLED
-    // Code removed to allow public access as per request
-    // if (path.startsWith('/dashboard') ... ) { ... }
-
-    return await updateSession(request)
+    try {
+        return await updateSession(request)
+    } catch (e: any) {
+        // Return 500 with exact error for debugging Vercel Edge constraints
+        console.error('Middleware crashed:', e.message, e.stack);
+        return new NextResponse(
+            `Middleware invocation failed: ${e.message}\nStack: ${e.stack}`,
+            { status: 500, headers: { 'content-type': 'text/plain' } }
+        );
+    }
 }
 
 export const config = {
