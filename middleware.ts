@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { updateSession } from '@/utils/supabase/middleware'
+import { updateSession } from './utils/supabase/middleware'
 
 // 🛡️ IP WHITELIST CONFIGURATION
 // Add your Public IP here to allow access to the dashboard.
