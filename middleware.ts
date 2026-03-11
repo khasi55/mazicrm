@@ -32,6 +32,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+    // Force Node.js runtime instead of Edge to resolve middleware invocation failures
+    runtime: 'nodejs',
     matcher: [
         /*
          * Match all request paths except for the ones starting with:
