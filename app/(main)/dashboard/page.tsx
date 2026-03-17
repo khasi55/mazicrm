@@ -2,35 +2,47 @@
 import PageLoader from "@/components/ui/PageLoader";
 import StatsCard from "@/components/dashboard/StatsCard";
 import AccountSwitcher from "@/components/dashboard/AccountSwitcher";
-import TradingObjectives from "@/components/dashboard/TradingObjectives";
+
 import DetailedStats from "@/components/dashboard/DetailedStats";
 import AccountOverviewStats from "@/components/dashboard/AccountOverviewStats";
-import RiskAnalysis from "@/components/dashboard/RiskAnalysis";
-import ConsistencyScore from "@/components/dashboard/ConsistencyScore";
+
 import TradeMonthlyCalendar from "@/components/dashboard/TradeMonthlyCalendar";
 import EquityCurveChart from "@/components/dashboard/EquityCurveChart";
 import TradeHistory from "@/components/dashboard/TradeHistory";
 import TradeAnalysis from "@/components/dashboard/TradeAnalysis";
-import { ChevronRight, Key, RotateCw, Plus } from "lucide-react";
+import { ChevronRight, Key, RotateCw, Plus, Settings } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { AccountProvider, useAccount } from "@/contexts/AccountContext";
 import { useState, useEffect } from "react";
 import CredentialsModal from "@/components/dashboard/CredentialsModal";
+import ManageAccountModal from "@/components/dashboard/ManageAccountModal";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
 function DashboardContent() {
-    const { selectedAccount, loading } = useAccount();
+    const { selectedAccount, loading, createDemoAccount } = useAccount();
     const [syncing, setSyncing] = useState(false);
     const [showCredentials, setShowCredentials] = useState(false);
+    const [showManagement, setShowManagement] = useState(false);
+    const [isCreatingDemo, setIsCreatingDemo] = useState(false);
 
     // Mobile specific state
     const [isMobileAccountSwitcherOpen, setIsMobileAccountSwitcherOpen] = useState(false);
 
     // Auto-Sync Trades on Account Selection - Removed to prevent loop
-    // Rely on Backend Risk Scheduler for periodic updates
     // Use manual Refresh button for instant sync
+    const handleCreateDemoAccount = async () => {
+        setIsCreatingDemo(true);
+        try {
+            await createDemoAccount();
+            // Optionally add a success message or handling
+        } catch (err) {
+            console.error("Demo account creation failed", err);
+        } finally {
+            setIsCreatingDemo(false);
+        }
+    };
 
     const formatStatus = (status: string) => {
         if (!status) return 'Unknown';
@@ -92,6 +104,12 @@ function DashboardContent() {
                 account={selectedAccount as any}
             />
 
+            <ManageAccountModal
+                isOpen={showManagement}
+                onClose={() => setShowManagement(false)}
+                account={selectedAccount}
+            />
+
             {/* Main Scrollable Area */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-800 hover:scrollbar-thumb-gray-700">
                 <div className="p-4 md:p-8 max-w-[1920px] mx-auto min-h-full">
@@ -101,22 +119,31 @@ function DashboardContent() {
                         <div className="flex items-center gap-2 text-xs md:text-sm text-slate-500 font-medium overflow-x-auto">
                             <span className="whitespace-nowrap">Dashboard</span>
                             <ChevronRight size={12} className="text-slate-400 flex-shrink-0" />
-                            <span className="whitespace-nowrap">All Challenges</span>
+                            <span className="whitespace-nowrap">Accounts</span>
                             <ChevronRight size={12} className="text-slate-400 flex-shrink-0" />
-                            <span className="text-black font-semibold whitespace-nowrap">Account {selectedAccount?.account_number || "..."}</span>
+                            <span className="text-black font-semibold whitespace-nowrap">
+                                {selectedAccount?.nickname || `Account ${selectedAccount?.account_number || "..."}`}
+                            </span>
                         </div>
 
                         <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
-                            {/* HIDING NEW CHALLENGE BUTTON AS REQUESTED
                             <Link
                                 href="/challenges"
-                                className="flex items-center gap-1.5 bg-gradient-to-b from-[#1d4ed8] to-[#1e40af] active:from-[#1E3A8A] active:to-[#1d4ed8] text-white text-xs md:text-sm font-medium px-3 md:px-4 py-2 md:py-2.5 rounded-full shadow-lg shadow-blue-900/20 transition-all border border-blue-500/20 active:scale-95 touch-manipulation whitespace-nowrap"
+                                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs md:text-sm font-bold px-3 md:px-5 py-2 md:py-2.5 rounded-lg shadow-lg shadow-blue-600/10 transition-all active:scale-95 touch-manipulation whitespace-nowrap"
                             >
                                 <Plus size={14} strokeWidth={2.5} />
-                                <span className="hidden sm:inline">New Challenge</span>
-                                <span className="sm:hidden">New</span>
+                                <span className="hidden sm:inline">CREATE REAL ACCOUNT</span>
+                                <span className="sm:hidden">REAL</span>
                             </Link>
-                            */}
+
+                            <Link
+                                href="/challenges?mode=demo"
+                                className="flex items-center gap-1.5 bg-slate-900 active:bg-black text-white text-xs md:text-sm font-bold px-3 md:px-5 py-2 md:py-2.5 rounded-lg shadow-lg shadow-slate-900/10 transition-all active:scale-95 touch-manipulation whitespace-nowrap"
+                            >
+                                <Plus size={14} strokeWidth={2.5} />
+                                <span className="hidden sm:inline">CREATE DEMO ACCOUNT</span>
+                                <span className="sm:hidden">DEMO</span>
+                            </Link>
 
                             {/* User Profile Dropdown */}
                             <div className="relative">
@@ -159,7 +186,7 @@ function DashboardContent() {
                     {/* Page Title Row */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 mb-6 md:mb-8 border-b border-slate-200 pb-6 md:pb-8">
                         <h1 className="text-2xl md:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight">
-                            Account {selectedAccount?.account_number || "-------"}
+                            {selectedAccount?.nickname || `Account ${selectedAccount?.account_number || "-------"}`}
                         </h1>
                         <button
                             onClick={() => {
@@ -255,7 +282,7 @@ function DashboardContent() {
                                         </p>
                                     </div>
 
-                                    <div className="flex items-center gap-3 sm:gap-6 relative z-10">
+                                    <div className="flex items-center gap-2 sm:gap-3 relative z-10">
                                         <div className="text-left sm:text-right border-r border-slate-200 pr-3 sm:pr-6 mr-1 sm:mr-2">
                                             <p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-1">Status</p>
                                             <p className={cn(
@@ -263,12 +290,22 @@ function DashboardContent() {
                                                 selectedAccount.status?.toLowerCase() === 'failed' ? "text-red-500" : "text-purple-600"
                                             )}>{formatStatus(selectedAccount.status)}</p>
                                         </div>
-                                        <button
-                                            onClick={() => setShowCredentials(true)}
-                                            className="p-2.5 sm:p-3 bg-slate-100 active:bg-slate-200 rounded-xl text-slate-500 active:text-slate-900 transition-colors touch-manipulation"
-                                        >
-                                            <Key size={18} className="sm:w-5 sm:h-5" />
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowManagement(true)}
+                                                className="p-2.5 sm:p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-slate-600 hover:text-slate-900 transition-all shadow-sm active:scale-95"
+                                                title="Account Settings"
+                                            >
+                                                <Settings size={18} className="sm:w-5 sm:h-5" />
+                                            </button>
+                                            <button
+                                                onClick={() => setShowCredentials(true)}
+                                                className="p-2.5 sm:p-3 bg-slate-100 active:bg-slate-200 rounded-xl text-slate-500 active:text-slate-900 transition-colors touch-manipulation"
+                                                title="View Credentials"
+                                            >
+                                                <Key size={18} className="sm:w-5 sm:h-5" />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Background decorative glow - Adjusted for light theme */}
@@ -286,25 +323,14 @@ function DashboardContent() {
                                 <AccountOverviewStats />
                             </div>
 
-                            {/* Trading Objectives */}
-                            <div className="shrink-0">
-                                <TradingObjectives />
-                            </div>
+
 
                             {/* Trade Analysis */}
                             <div className="shrink-0">
                                 <TradeAnalysis />
                             </div>
 
-                            {/* Risk Analysis */}
-                            <div className="shrink-0">
-                                <RiskAnalysis />
-                            </div>
 
-                            {/* Consistency Score */}
-                            <div className="shrink-0">
-                                <ConsistencyScore />
-                            </div>
 
                             {/* Detailed Stats */}
                             <div className="shrink-0">

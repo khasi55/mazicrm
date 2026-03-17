@@ -1,30 +1,32 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Check, Info, CreditCard, ChevronDown, ChevronUp, Lock, Loader2, Copy, X } from "lucide-react";
+import { Check, Info, CreditCard, ChevronDown, ChevronUp, Lock, Loader2, Copy, X, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { fetchFromBackend } from "@/lib/backend-api";
+import { useAccount } from "@/contexts/AccountContext";
 
 // --- Data ---
-const CHALLENGE_TYPES = [
-    { id: "1-step", label: "One Step", desc: "Single phase evaluation" },
-    { id: "2-step", label: "Two Step", desc: "Standard verification", recommended: true },
-    { id: "Instant", label: "Instant", desc: "Lower risk, lower cost" }
+const ACCOUNT_TYPES = [
+    { id: "standard", label: "Standard", desc: "Classic execution with tight spreads" },
+    { id: "commission-free", label: "Commission Free", desc: "Zero commissions on all pairs" },
+    { id: "swap-free", label: "Swap Free", desc: "Islamic account, no overnight fees", recommended: true }
 ];
 
-const MODELS = [
-    { id: "standard", label: "SharkFunded", desc: "Classic model" },
-    { id: "pro", label: "SharkFunded Pro", desc: "Higher leverage" }
+const TRADING_MODELS = [
+    { id: "raw", label: "Raw Spreads", desc: "Direct market access spreads" },
+    { id: "fixed", label: "Fixed Spreads", desc: "Predictable trading costs" }
 ];
 
-const SIZES = [5000, 10000, 25000, 50000, 100000, 200000];
+const DEFAULT_SIZE = 10000;
+const MIN_SIZE = 1000;
+const MAX_SIZE = 1000000;
 
 const PLATFORMS = [
-    { id: "mt5", label: "MetaTrader 5" },
-    { id: "tradelocker", label: "TradeLocker" }
+    { id: "mt5", label: "MetaTrader 5" }
 ];
 
 const PAYMENT_GATEWAYS = [
@@ -155,102 +157,47 @@ const SuccessModal = ({ credentials, onClose }: { credentials: any, onClose: () 
     );
 };
 
-export default function ChallengeConfigurator() {
+export default function AccountConfigurator() {
     const router = useRouter();
     const supabase = createClient();
+    const { createDemoAccount } = useAccount();
 
-    // State
-    const [type, setType] = useState("2-step");
-    const [model, setModel] = useState("standard");
-    const [size, setSize] = useState(100000);
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const initialMode = (searchParams?.get('mode') === 'demo' ? 'demo' : 'real') as 'real' | 'demo';
+    const [mode, setMode] = useState<'real' | 'demo'>(initialMode);
+    const [type, setType] = useState("swap-free");
+    const [model, setModel] = useState("raw");
+    const [size, setSize] = useState(DEFAULT_SIZE);
+    const [customAmount, setCustomAmount] = useState(String(DEFAULT_SIZE));
     const [platform, setPlatform] = useState("mt5");
     const [gateway, setGateway] = useState("sharkpay");
-    const [coupon, setCoupon] = useState("");
     const [showRules, setShowRules] = useState(true);
-    const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
-    const [couponError, setCouponError] = useState("");
-    const [validatingCoupon, setValidatingCoupon] = useState(false);
+    const [leverage, setLeverage] = useState("1:500");
+    const [accountCurrency, setAccountCurrency] = useState("USD");
 
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [purchasedCredentials, setPurchasedCredentials] = useState<any>(null);
     const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-    // Clear applied coupon when configuration changes
-    useEffect(() => {
-        if (appliedCoupon) {
-            setAppliedCoupon(null);
-            setCouponError("");
-        }
-    }, [type, model, size]); // Re-run when these change
 
     // Price Calculation
     // Base prices in USD hardcoded for simplicity
     const getBasePrice = () => {
-        if (type === "1-step") {
-            if (size === 5000) return 39;
-            if (size === 10000) return 69;
-            if (size === 25000) return 149;
-            if (size === 50000) return 279;
-            if (size === 100000) return 499;
-            if (size === 200000) return 949;
-        }
-        if (type === "2-step") {
-            if (size === 5000) return 29;
-            if (size === 10000) return 49;
-            if (size === 25000) return 119;
-            if (size === 50000) return 229;
-            if (size === 100000) return 449;
-            if (size === 200000) return 899;
-        }
-        if (type === "instant") {
-            // Approx 8-10% of account size for instant
-            return size * 0.08;
-        }
-        return size * 0.005; // Default fallback
+        // Simple 1:1 pricing: payment amount = deposit amount
+        return Number(size) || 0;
     };
 
     let priceUSD = getBasePrice();
     if (model === "pro") priceUSD = Math.round(priceUSD * 1.2);
 
     const basePriceUSD = Math.round(priceUSD);
-    const discountAmount = appliedCoupon ? appliedCoupon.discount.amount : 0;
-    const finalPriceUSD = basePriceUSD - discountAmount;
+    const finalPriceUSD = basePriceUSD;
     const finalPriceINR = Math.round(finalPriceUSD * 84); // Simple fixed rate: 84
 
     const selectedGateway = PAYMENT_GATEWAYS.find(g => g.id === gateway);
-    const displayPrice = gateway === 'sharkpay' ? finalPriceINR : finalPriceUSD;
+    const displayPrice = mode === 'real' ? (gateway === 'sharkpay' ? finalPriceINR : finalPriceUSD) : 0;
     const displayCurrency = selectedGateway?.currency || 'USD';
 
-    const handleApplyCoupon = async () => {
-        if (!coupon.trim()) return;
-
-        setValidatingCoupon(true);
-        setCouponError("");
-
-        try {
-            const data = await fetchFromBackend('/api/coupons/validate', {
-                method: 'POST',
-                body: JSON.stringify({
-                    code: coupon.trim(),
-                    amount: basePriceUSD,
-                    account_type_id: null
-                })
-            });
-
-            if (data.valid) {
-                setAppliedCoupon(data);
-                setCouponError("");
-            } else {
-                setAppliedCoupon(null);
-                setCouponError(data.error || 'Invalid coupon code');
-            }
-        } catch (error) {
-            console.error('Coupon validation error:', error);
-            setCouponError('Failed to validate coupon');
-        } finally {
-            setValidatingCoupon(false);
-        }
-    };
 
     const handlePurchase = async () => {
         setIsPurchasing(true);
@@ -265,30 +212,29 @@ export default function ChallengeConfigurator() {
             }
 
             // Use new payment flow
-            const res = await fetch('/api/payment/create-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type,
-                    model,
-                    size,
-                    platform,
-                    coupon,
-                    gateway // User selected gateway
-                })
-            });
+            if (mode === 'real') {
+                const data = await fetchFromBackend('/api/payment/create-order', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        account_type: type,
+                        model,
+                        size,
+                        platform,
+                        gateway // User selected gateway
+                    })
+                });
 
-            const data = await res.json();
-
-            if (res.ok && data.success) {
-                // Redirect to payment gateway
-                if (data.paymentUrl) {
-                    window.location.href = data.paymentUrl;
+                if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                } else if (data.order_id) {
+                    setPurchasedCredentials(data);
                 } else {
-                    alert('Payment URL not received. Please contact support.');
+                    alert(data.error || 'Failed to create order');
                 }
             } else {
-                alert(data.error || 'Failed to create order');
+                // Demo Mode: Call context method
+                await createDemoAccount();
+                router.push('/dashboard');
             }
         } catch (error) {
             console.error('Order creation error:', error);
@@ -311,9 +257,35 @@ export default function ChallengeConfigurator() {
             </AnimatePresence>
 
             {/* Page Header */}
-            <div className="mb-8 flex items-center gap-4">
-                <div className="h-8 w-1 bg-primary rounded-full" />
-                <h1 className="text-3xl font-black tracking-tight text-black">New Challenge</h1>
+            <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="h-8 w-1 bg-primary rounded-full" />
+                    <h1 className="text-3xl font-black tracking-tight text-black">
+                        {mode === 'real' ? 'New Real Account' : 'New Demo Account'}
+                    </h1>
+                </div>
+
+                {/* Mode Switcher (Tab style) */}
+                <div className="flex p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
+                    <button
+                        onClick={() => setMode('real')}
+                        className={cn(
+                            "px-6 py-2 text-xs font-bold rounded-lg transition-all",
+                            mode === 'real' ? "bg-white text-black shadow-sm border border-slate-200" : "text-slate-500 hover:text-black"
+                        )}
+                    >
+                        REAL
+                    </button>
+                    <button
+                        onClick={() => setMode('demo')}
+                        className={cn(
+                            "px-6 py-2 text-xs font-bold rounded-lg transition-all",
+                            mode === 'demo' ? "bg-white text-black shadow-sm border border-slate-200" : "text-slate-500 hover:text-black"
+                        )}
+                    >
+                        DEMO
+                    </button>
+                </div>
             </div>
 
             <div className="flex flex-col xl:flex-row gap-12">
@@ -321,11 +293,11 @@ export default function ChallengeConfigurator() {
                 {/* --- Left Column: Configuration --- */}
                 <div className="flex-1 space-y-10">
 
-                    {/* 1. Challenge Type */}
+                    {/* 1. Account Type */}
                     <section>
-                        <SectionHeader title="Challenge Type" sub="Choose the type of challenge you want to take" />
+                        <SectionHeader title="Account Type" sub="Choose the trading conditions that suit your style" />
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {CHALLENGE_TYPES.map(t => (
+                            {ACCOUNT_TYPES.map(t => (
                                 <RadioPill
                                     key={t.id}
                                     active={type === t.id}
@@ -339,9 +311,9 @@ export default function ChallengeConfigurator() {
 
                     {/* 2. Model */}
                     <section>
-                        <SectionHeader title="Model" sub="Choose the trading model" />
+                        <SectionHeader title="Spread Type" sub="Choose how you want to pay for spreads" />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {MODELS.map(m => (
+                            {TRADING_MODELS.map(m => (
                                 <RadioPill
                                     key={m.id}
                                     active={model === m.id}
@@ -353,7 +325,7 @@ export default function ChallengeConfigurator() {
                         </div>
                     </section>
 
-                    {/* 3. Customize Rules (Accordion) */}
+                    {/* 3. Trading Conditions (Accordion) */}
                     <section className="rounded-xl border border-border bg-card/50 overflow-hidden">
                         <div
                             onClick={() => setShowRules(!showRules)}
@@ -364,8 +336,8 @@ export default function ChallengeConfigurator() {
                                     <Info size={18} />
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-sm">Customise Trading Rules</h4>
-                                    <p className="text-[10px] text-muted-foreground">Adjust your challenge parameters</p>
+                                    <h4 className="font-bold text-sm">Review Account Conditions</h4>
+                                    <p className="text-[10px] text-muted-foreground">Detailed trading parameters for your selection</p>
                                 </div>
                             </div>
                             {showRules ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -379,92 +351,157 @@ export default function ChallengeConfigurator() {
                                     exit={{ height: 0, opacity: 0 }}
                                     className="border-t border-border px-4 py-6 bg-card"
                                 >
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         <div>
-                                            <p className="text-xs font-bold mb-3 text-muted-foreground">Profit Target (Phase 1)</p>
+                                            <p className="text-xs font-bold mb-3 text-muted-foreground uppercase tracking-wider">Leverage limit</p>
                                             <div className="flex gap-2">
-                                                <button className="flex-1 py-2 text-xs font-bold rounded border border-primary bg-primary/10 text-primary">8%</button>
-                                                <button className="flex-1 py-2 text-xs font-bold rounded border border-border text-muted-foreground hover:bg-white/5">10%</button>
+                                                {["1:100", "1:200", "1:500"].map(l => (
+                                                    <button
+                                                        key={l}
+                                                        onClick={() => setLeverage(l)}
+                                                        className={cn(
+                                                            "flex-1 py-2.5 text-xs font-bold rounded-lg border transition-all",
+                                                            leverage === l
+                                                                ? "border-primary bg-primary/10 text-primary shadow-sm"
+                                                                : "border-border text-muted-foreground hover:bg-white/5"
+                                                        )}
+                                                    >
+                                                        {l}
+                                                    </button>
+                                                ))}
                                             </div>
                                         </div>
-                                        {/* More options placeholder */}
+
+                                        <div>
+                                            <p className="text-xs font-bold mb-3 text-muted-foreground uppercase tracking-wider">Account Currency</p>
+                                            <div className="flex gap-2">
+                                                {["USD", "EUR", "GBP"].map(curr => (
+                                                    <button
+                                                        key={curr}
+                                                        onClick={() => setAccountCurrency(curr)}
+                                                        className={cn(
+                                                            "flex-1 py-2.5 text-xs font-bold rounded-lg border transition-all",
+                                                            accountCurrency === curr
+                                                                ? "border-primary bg-primary/10 text-primary shadow-sm"
+                                                                : "border-border text-muted-foreground hover:bg-white/5"
+                                                        )}
+                                                    >
+                                                        {curr}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="md:col-span-2 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Execution</p>
+                                                    <p className="text-xs font-bold text-slate-700">Market Execution</p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Min Lot Size</p>
+                                                    <p className="text-xs font-bold text-slate-700">0.01 Lots</p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Commission</p>
+                                                    <p className="text-xs font-bold text-slate-700">{type === 'commission-free' ? '$0 / Lot' : '$7 / Lot'}</p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Swap Fees</p>
+                                                    <p className="text-xs font-bold text-slate-700">{type === 'swap-free' ? 'Zero Swaps' : 'Standard'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </motion.div>
                             )}
                         </AnimatePresence>
                     </section>
 
-                    {/* 4. Account Size */}
+                    {/* 4. Account Balance */}
                     <section>
-                        <SectionHeader title="Account Size" sub="Choose your preferred account size" />
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {SIZES.map(s => (
-                                <RadioPill
-                                    key={s}
-                                    active={size === s}
-                                    label={`$${s.toLocaleString()}`}
-                                    onClick={() => setSize(s)}
-                                />
-                            ))}
+                        <SectionHeader title="Initial Account Balance" sub="Enter the starting balance for your broker account" />
+                        <div className="relative max-w-sm">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+                            <input
+                                type="number"
+                                value={customAmount}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomAmount(val);
+                                    const num = Number(val);
+                                    if (!isNaN(num)) setSize(num);
+                                }}
+                                onBlur={() => {
+                                    let num = Number(customAmount);
+                                    if (isNaN(num) || num < MIN_SIZE) num = MIN_SIZE;
+                                    if (num > MAX_SIZE) num = MAX_SIZE;
+                                    setSize(num);
+                                    setCustomAmount(String(num));
+                                }}
+                                className="w-full bg-card border border-border rounded-xl py-4 pl-10 pr-4 text-lg font-bold text-foreground focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-sm"
+                                placeholder="E.g. 50,000"
+                            />
                         </div>
+                        <p className="text-[10px] text-muted-foreground mt-2 ml-1">
+                            Min: ${MIN_SIZE.toLocaleString()} | Max: ${MAX_SIZE.toLocaleString()}
+                        </p>
                     </section>
 
                     {/* 5. Platform */}
                     <section>
-                        <SectionHeader title="Trading Platform" sub="Select your preferred platform" />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {PLATFORMS.map(p => (
-                                <RadioPill
-                                    key={p.id}
-                                    active={platform === p.id}
-                                    label={p.label}
-                                    onClick={() => setPlatform(p.id)}
-                                />
-                            ))}
+                        <SectionHeader title="Trading Platform" sub="Your account will be created on MetaTrader 5" />
+                        <div className="flex gap-4">
+                            <div className="flex items-center gap-3 px-6 py-4 rounded-xl border border-primary bg-primary/5 text-primary">
+                                <Monitor size={20} />
+                                <span className="font-bold">MetaTrader 5</span>
+                            </div>
                         </div>
                     </section>
 
-                    {/* 6. Payment Gateway */}
-                    <section>
-                        <SectionHeader title="Payment Gateway" sub="Choose your preferred payment method" />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {PAYMENT_GATEWAYS.map(g => (
-                                <div
-                                    key={g.id}
-                                    onClick={() => setGateway(g.id)}
-                                    className={cn(
-                                        "relative flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-200 select-none",
-                                        gateway === g.id
-                                            ? "bg-primary/10 border-primary shadow-[0_0_0_1px_rgba(var(--primary),1)]"
-                                            : "bg-card border-border hover:border-gray-600"
-                                    )}
-                                >
-                                    {/* Radio Circle */}
-                                    <div className={cn(
-                                        "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
-                                        gateway === g.id ? "border-primary bg-primary" : "border-gray-500"
-                                    )}>
-                                        {gateway === g.id && <div className="w-2 h-2 rounded-full bg-white" />}
-                                    </div>
+                    {/* 6. Payment Gateway (Only for Real) */}
+                    {mode === 'real' && (
+                        <section>
+                            <SectionHeader title="Payment Gateway" sub="Choose your preferred payment method" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {PAYMENT_GATEWAYS.map(g => (
+                                    <div
+                                        key={g.id}
+                                        onClick={() => setGateway(g.id)}
+                                        className={cn(
+                                            "relative flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-200 select-none",
+                                            gateway === g.id
+                                                ? "bg-primary/10 border-primary shadow-[0_0_0_1px_rgba(var(--primary),1)]"
+                                                : "bg-card border-border hover:border-gray-600"
+                                        )}
+                                    >
+                                        {/* Radio Circle */}
+                                        <div className={cn(
+                                            "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
+                                            gateway === g.id ? "border-primary bg-primary" : "border-gray-500"
+                                        )}>
+                                            {gateway === g.id && <div className="w-2 h-2 rounded-full bg-white" />}
+                                        </div>
 
-                                    <div className="flex-1 flex items-center gap-3">
-                                        <span className="text-2xl">{g.icon}</span>
-                                        <div className="flex flex-col">
-                                            <div className="flex items-center gap-2">
-                                                <span className={cn("text-sm font-bold", gateway === g.id ? "text-primary" : "text-foreground")}>
-                                                    {g.label}
-                                                </span>
-                                                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-mono">
-                                                    {g.currency}
-                                                </span>
+                                        <div className="flex-1 flex items-center gap-3">
+                                            <span className="text-2xl">{g.icon}</span>
+                                            <div className="flex flex-col">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={cn("text-sm font-bold", gateway === g.id ? "text-primary" : "text-foreground")}>
+                                                        {g.label}
+                                                    </span>
+                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-mono">
+                                                        {g.currency}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] text-muted-foreground">{g.desc}</span>
                                             </div>
-                                            <span className="text-[10px] text-muted-foreground">{g.desc}</span>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
+                                ))}
+                            </div>
+                        </section>
+                    )}
 
                 </div>
 
@@ -472,39 +509,14 @@ export default function ChallengeConfigurator() {
                 {/* --- Right Column: Summary --- */}
                 <div className="w-full xl:w-[450px] shrink-0 xl:sticky xl:top-8 space-y-6">
 
-                    {/* Coupon Code */}
-                    <div>
-                        <SectionHeader title="Coupon Code" sub="Enter a coupon to get a discount" />
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="Enter coupon code"
-                                className="flex-1 bg-card border border-border rounded-lg px-4 py-3 text-sm focus:border-primary focus:ring-1 focus:ring-primary transition-all uppercase"
-                                value={coupon}
-                                onChange={(e) => {
-                                    setCoupon(e.target.value);
-                                    setCouponError("");
-                                    setAppliedCoupon(null);
-                                }}
-                                disabled={validatingCoupon}
-                            />
-                            <button
-                                onClick={handleApplyCoupon}
-                                disabled={validatingCoupon || !coupon.trim()}
-                                className="px-6 font-bold text-sm rounded-lg bg-card border border-border hover:border-primary hover:text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {validatingCoupon ? 'Checking...' : 'Apply'}
-                            </button>
-                        </div>
-                        {couponError && (
-                            <p className="text-xs text-red-400 mt-1">{couponError}</p>
-                        )}
-                        {appliedCoupon && (
-                            <div className="flex items-center gap-2 text-sm text-green-400 mt-1">
-                                <Check size={14} />
-                                <span>Coupon "{appliedCoupon.coupon.code}" applied!</span>
-                            </div>
-                        )}
+                    {/* Step-by-step summary */}
+                    <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden p-6">
+                        <h3 className="font-bold text-lg mb-4">{mode === 'real' ? 'Initial Deposit' : 'Demo Funding'}</h3>
+                        <p className="text-sm text-muted-foreground">
+                            {mode === 'real'
+                                ? "The amount you enter as your initial balance is the exact amount you will pay to fund your real broker account."
+                                : "Demo accounts are funded instantly with the amount specified. No payment is required for demo accounts."}
+                        </p>
                     </div>
 
                     {/* Order Summary Card */}
@@ -515,22 +527,27 @@ export default function ChallengeConfigurator() {
 
                         <div className="p-6 space-y-6">
                             <div className="flex justify-between items-start text-sm">
-                                <span className="text-muted-foreground">${size.toLocaleString()} — {type === "1-step" ? "One Step" : type === "2-step" ? "Two Step" : "Instant"} {model === "standard" ? "Shark" : "Shark Pro"}</span>
+                                <span className="text-muted-foreground">
+                                    {ACCOUNT_TYPES.find(t => t.id === type)?.label} Account {mode === 'real' ? 'Deposit' : 'Demo Funding'}
+                                </span>
                                 <div className="text-right">
-                                    <span className="font-bold font-mono">{displayCurrency === 'INR' ? '₹' : '$'}{(gateway === 'sharkpay' ? Math.round(basePriceUSD * 84) : basePriceUSD).toLocaleString()}</span>
+                                    <span className="font-bold font-mono">
+                                        {mode === 'real'
+                                            ? (displayCurrency === 'INR' ? '₹' : '$') + (gateway === 'sharkpay' ? Math.round(size * 84) : size).toLocaleString()
+                                            : `$${size.toLocaleString()} (FREE)`}
+                                    </span>
                                 </div>
                             </div>
-
-                            {appliedCoupon && (
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-green-400">Discount ({appliedCoupon.coupon.code})</span>
-                                    <span className="font-bold font-mono text-green-400">-{displayCurrency === 'INR' ? '₹' : '$'}{(gateway === 'sharkpay' ? Math.round(discountAmount * 84) : discountAmount).toLocaleString()}</span>
-                                </div>
-                            )}
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground leading-relaxed">
                                 Platform: {PLATFORMS.find(p => p.id === platform)?.label}
                                 <br />
-                                Payment: {selectedGateway?.label} ({selectedGateway?.currency})
+                                Leverage: {leverage} | {accountCurrency} {mode === 'real' ? 'Real' : 'Demo'}
+                                {mode === 'real' && (
+                                    <>
+                                        <br />
+                                        Payment: {selectedGateway?.label} ({displayCurrency})
+                                    </>
+                                )}
                             </div>
 
                             <div className="h-px bg-border" />
@@ -577,7 +594,7 @@ export default function ChallengeConfigurator() {
                                 ) : (
                                     <>
                                         <CreditCard size={20} />
-                                        Proceed to Payment
+                                        {mode === 'real' ? 'Proceed to Payment' : 'Create Demo Account'}
                                     </>
                                 )}
                             </button>

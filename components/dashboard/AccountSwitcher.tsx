@@ -1,4 +1,4 @@
-import { Search, ChevronDown, TrendingUp, Briefcase, ShoppingCart, Loader2, Filter, RefreshCw, Plus } from "lucide-react";
+import { Search, ChevronDown, TrendingUp, Briefcase, ShoppingCart, Loader2, Filter, RefreshCw, Plus, Pencil } from "lucide-react";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useAccount } from "@/contexts/AccountContext";
@@ -14,7 +14,15 @@ interface AccountSwitcherProps {
 }
 
 export default function AccountSwitcher({ isOpen, onClose, className }: AccountSwitcherProps = {}) {
-    const { accounts, selectedAccount, setSelectedAccount, loading, refreshAccounts } = useAccount();
+    const {
+        accounts,
+        selectedAccount,
+        setSelectedAccount,
+        loading,
+        refreshAccounts,
+        createDemoAccount,
+        updateAccount
+    } = useAccount();
     const [searchQuery, setSearchQuery] = useState("");
     const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -191,6 +199,8 @@ export default function AccountSwitcher({ isOpen, onClose, className }: AccountS
                             getPnL={getPnL}
                             getStatusLabel={getStatusLabel}
                             isMobile={true}
+                            createDemoAccount={createDemoAccount}
+                            updateAccount={updateAccount}
                             // Filter Props
                             typeFilter={typeFilter} setTypeFilter={setTypeFilter}
                             stateFilter={stateFilter} setStateFilter={setStateFilter}
@@ -225,6 +235,8 @@ export default function AccountSwitcher({ isOpen, onClose, className }: AccountS
                 getPnL={getPnL}
                 getStatusLabel={getStatusLabel}
                 isMobile={false}
+                createDemoAccount={createDemoAccount}
+                updateAccount={updateAccount}
 
                 // Filter Props
                 typeFilter={typeFilter} setTypeFilter={setTypeFilter}
@@ -252,6 +264,8 @@ function AccountSwitcherContent({
     getPnL,
     getStatusLabel,
     isMobile,
+    createDemoAccount,
+    updateAccount,
     // Filter Props
     typeFilter, setTypeFilter,
     stateFilter, setStateFilter,
@@ -260,6 +274,37 @@ function AccountSwitcherContent({
     showStateDropdown, setShowStateDropdown,
     showPhaseDropdown, setShowPhaseDropdown
 }: any) {
+    const [isCreatingDemo, setIsCreatingDemo] = useState(false);
+    const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+    const [editNickname, setEditNickname] = useState("");
+    const [editLeverage, setEditLeverage] = useState(100);
+
+    const handleCreateDemo = async () => {
+        setIsCreatingDemo(true);
+        try {
+            await createDemoAccount();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsCreatingDemo(false);
+        }
+    };
+
+    const startEditing = (acc: any) => {
+        setEditingAccountId(acc.id);
+        setEditNickname(acc.nickname || "");
+        setEditLeverage(acc.leverage || 100);
+    };
+
+    const handleSaveUpdate = async (id: string) => {
+        try {
+            await updateAccount(id, { nickname: editNickname, leverage: editLeverage });
+            setEditingAccountId(null);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     return (
         <>
             <div className="p-4 sm:p-6 pb-4">
@@ -279,7 +324,7 @@ function AccountSwitcherContent({
                             <button
                                 onClick={handleRefresh}
                                 disabled={isRefreshing}
-                                className="text-gray-500 hover:text-white transition-colors"
+                                className="text-gray-500 hover:text-blue-500 transition-colors"
                                 title="Sync Trades & Reload"
                             >
                                 <RefreshCw size={14} className={cn(isRefreshing && "animate-spin")} />
@@ -288,6 +333,8 @@ function AccountSwitcherContent({
                         <p className="text-sm text-gray-500">{accounts.length} accounts</p>
                     </div>
                 </div>
+
+
 
                 {/* HIDING BUY CHALLENGE AS REQUESTED
                 <Link
@@ -411,78 +458,130 @@ function AccountSwitcherContent({
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 transition-colors"
                     />
                 </div>
-            </div>
+            </div >
 
             {/* Account List */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4 sm:pb-6 space-y-3 custom-scrollbar overscroll-contain">
-                {filteredAccounts.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                        No accounts found
-                    </div>
-                ) : (
-                    filteredAccounts.map((acc: typeof selectedAccount) => {
-                        const isSelected = selectedAccount?.id === acc.id;
-                        const pnl = getPnL(acc);
-                        const status = getStatusLabel(acc.status);
+            < div className="flex-1 overflow-y-auto px-4 pb-4 sm:pb-6 space-y-3 custom-scrollbar overscroll-contain" >
+                {
+                    filteredAccounts.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No accounts found
+                        </div>
+                    ) : (
+                        filteredAccounts.map((acc: any) => {
+                            const isSelected = selectedAccount?.id === acc.id;
+                            const isEditing = editingAccountId === acc.id;
+                            const pnl = getPnL(acc);
+                            const status = getStatusLabel(acc.status);
 
-                        return (
-                            <motion.div
-                                key={acc.id}
-                                layoutId={isSelected ? "selected-account" : undefined}
-                                onClick={() => setSelectedAccount(acc)}
-                                className={cn(
-                                    "p-4 rounded-xl border cursor-pointer transition-all relative group overflow-hidden active:scale-98 touch-manipulation",
-                                    isSelected
-                                        ? "bg-purple-50 border-purple-500/30"
-                                        : "bg-white border-transparent hover:border-slate-200 hover:bg-slate-50"
-                                )}
-                            >
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className={cn(
-                                            "w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0",
-                                            isSelected ? "bg-purple-500/20 text-purple-600" : "bg-slate-100 text-slate-500"
-                                        )}>
-                                            <TrendingUp size={20} />
+                            return (
+                                <motion.div
+                                    key={acc.id}
+                                    layoutId={isSelected ? "selected-account" : undefined}
+                                    className={cn(
+                                        "p-4 rounded-xl border transition-all relative group overflow-hidden touch-manipulation",
+                                        isSelected
+                                            ? "bg-blue-50 border-blue-200"
+                                            : "bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                                    )}
+                                >
+                                    {isEditing ? (
+                                        <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Nickname</label>
+                                                <input
+                                                    type="text"
+                                                    value={editNickname}
+                                                    onChange={(e) => setEditNickname(e.target.value)}
+                                                    className="w-full bg-slate-100 border-none rounded-lg py-2 px-3 text-sm mt-1"
+                                                    placeholder="Enter nickname"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Leverage</label>
+                                                <select
+                                                    value={editLeverage}
+                                                    onChange={(e) => setEditLeverage(Number(e.target.value))}
+                                                    className="w-full bg-slate-100 border-none rounded-lg py-2 px-3 text-sm mt-1"
+                                                >
+                                                    <option value={50}>1:50</option>
+                                                    <option value={100}>1:100</option>
+                                                    <option value={200}>1:200</option>
+                                                    <option value={500}>1:500</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleSaveUpdate(acc.id)}
+                                                    className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded-lg"
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    onClick={() => setEditingAccountId(null)}
+                                                    className="flex-1 bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-lg"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="min-w-0">
-                                            <p className="font-bold text-slate-900 text-sm truncate pr-2">
-                                                {acc.account_number}
-                                                <span className="text-slate-500 text-xs font-normal ml-2">#{acc.login}</span>
-                                            </p>
-                                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider truncate">
-                                                {acc.account_type?.replace(/_/g, ' ') || 'PHASE 1'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className={cn(
-                                        "text-[10px] font-bold px-2.5 py-1 rounded-md capitalize shrink-0 ml-2",
-                                        status.toLowerCase() === 'active' ? "bg-purple-500/10 text-purple-600" :
-                                            status.toLowerCase() === 'passed' ? "bg-green-500/10 text-green-600" :
-                                                (status.toLowerCase() === 'failed' || status.toLowerCase() === 'not passed') ? "bg-red-500/10 text-red-600" :
-                                                    "bg-slate-100 text-slate-500"
-                                    )}>
-                                        {status}
-                                    </span>
-                                </div>
+                                    ) : (
+                                        <div onClick={() => setSelectedAccount(acc)} className="cursor-pointer">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className={cn(
+                                                        "w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                                                        isSelected ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"
+                                                    )}>
+                                                        <TrendingUp size={20} />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-slate-900 text-sm truncate pr-2">
+                                                            {acc.nickname || acc.account_number}
+                                                            <span className="text-slate-500 text-xs font-normal ml-2">#{acc.login}</span>
+                                                        </p>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider truncate">
+                                                                {acc.account_type?.replace(/_/g, ' ') || 'PHASE 1'}
+                                                            </p>
+                                                            <span className="text-[10px] text-slate-400 font-bold">•</span>
+                                                            <p className="text-[10px] text-slate-500 font-bold">1:{acc.leverage || 100}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-2">
+                                                    <span className={cn(
+                                                        "text-[10px] font-bold px-2.5 py-1 rounded-md capitalize shrink-0",
+                                                        status.toLowerCase() === 'active' ? "bg-green-100 text-green-600" :
+                                                            status.toLowerCase() === 'passed' ? "bg-blue-100 text-blue-600" :
+                                                                (status.toLowerCase() === 'failed' || status.toLowerCase() === 'not passed') ? "bg-red-100 text-red-600" :
+                                                                    "bg-slate-100 text-slate-500"
+                                                    )}>
+                                                        {status}
+                                                    </span>
+                                                </div>
+                                            </div>
 
-                                <div className="flex justify-between items-end">
-                                    <div>
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">BALANCE</p>
-                                        <p className="text-slate-900 font-bold text-sm">${acc.balance.toLocaleString()}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">PNL</p>
-                                        <p className={cn("font-bold text-sm", pnl >= 0 ? "text-green-400" : "text-red-400")}>
-                                            {pnl >= 0 ? "+" : ""}{pnl.toLocaleString()}
-                                        </p>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        );
-                    })
-                )}
-            </div>
+                                            <div className="flex justify-between items-end">
+                                                <div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">BALANCE</p>
+                                                    <p className="text-slate-900 font-bold text-sm">${acc.balance.toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">PNL</p>
+                                                    <p className={cn("font-bold text-sm", pnl >= 0 ? "text-green-500" : "text-red-500")}>
+                                                        {pnl >= 0 ? "+" : ""}{pnl.toLocaleString()}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            );
+                        })
+                    )
+                }
+            </div >
         </>
     );
 }

@@ -67,10 +67,7 @@ function ObjectiveRow({ title, timer, max, current, threshold, status, isLossLim
                 </span>
             </div>
 
-            <div className="flex justify-between text-[11px] text-gray-500 mb-2 font-medium">
-                <span>Max Allowed: ${max.toLocaleString()}</span>
-                <span>Threshold: ${threshold.toLocaleString()}</span>
-            </div>
+
 
             <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden relative">
                 {/* Progress Bar */}

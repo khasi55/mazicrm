@@ -3,12 +3,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { fetchFromBackend } from '@/lib/backend-api';
+import { MOCK_ACCOUNTS, Account as MockAccount } from '@/lib/mock-data';
 
 interface Account {
     id: string;
     challenge_id: string;
     user_id: string;
     login: number;
+    nickname?: string;
+    leverage?: number;
     password?: string;
     server?: string;
     account_number: string;
@@ -25,6 +28,8 @@ interface AccountContextType {
     accounts: Account[];
     loading: boolean;
     refreshAccounts: () => Promise<void>;
+    updateAccount: (id: string, data: { nickname?: string; leverage?: number }) => Promise<void>;
+    createDemoAccount: () => Promise<void>;
 }
 
 const AccountContext = createContext<AccountContextType | undefined>(undefined);
@@ -78,13 +83,16 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             const data = await fetchFromBackend('/api/dashboard/accounts');
 
 
-            if (data && data.accounts) {
+            let accountsData: Account[] = [];
 
-                const accountsData = data.accounts.map((challenge: any) => ({
+            if (data && data.accounts && data.accounts.length > 0) {
+                accountsData = data.accounts.map((challenge: any) => ({
                     id: challenge.id,
                     challenge_id: challenge.id,
                     user_id: challenge.user_id,
                     login: challenge.login,
+                    nickname: challenge.nickname || '',
+                    leverage: challenge.leverage || 100,
                     password: challenge.master_password,
                     server: challenge.server,
                     account_number: challenge.challenge_number || `SF-${challenge.id.slice(0, 8)}`,
@@ -94,13 +102,20 @@ export function AccountProvider({ children }: { children: ReactNode }) {
                     initial_balance: Number(challenge.initial_balance),
                     status: challenge.status || 'active',
                 }));
+            } else {
+                // FALLBACK TO MOCK DATA FOR UI DESIGN
+                console.log('No backend accounts found, using mock data for UI design.');
+                accountsData = MOCK_ACCOUNTS as Account[];
+            }
 
+            if (accountsData.length > 0) {
                 // Optimize: Only update state if data actually changed
                 // This prevents the whole dashboard from re-rendering every 15s if data is same
                 setAccounts(prev => {
                     const isSame = JSON.stringify(prev) === JSON.stringify(accountsData);
                     return isSame ? prev : accountsData;
                 });
+
                 // Auto-select first account if none selected
                 if (!selectedAccount) {
                     setSelectedAccount(accountsData[0]);
@@ -117,18 +132,62 @@ export function AccountProvider({ children }: { children: ReactNode }) {
                         ) {
                             setSelectedAccount(updatedCurrent);
                         }
+                    } else {
+                        // If selected account is no longer in the list (e.g. switched from mock to real), select the first one
+                        setSelectedAccount(accountsData[0]);
                     }
                 }
             }
         } catch (error) {
-            console.error('Error fetching accounts:', error);
+            console.error('Error fetching accounts, falling back to mock data:', error);
+            // FALLBACK TO MOCK DATA ON ERROR
+            setAccounts(MOCK_ACCOUNTS as Account[]);
+            if (!selectedAccount) {
+                setSelectedAccount(MOCK_ACCOUNTS[0] as Account);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const updateAccount = async (id: string, updateData: { nickname?: string; leverage?: number }) => {
+        try {
+            await fetchFromBackend(`/api/dashboard/accounts/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify(updateData),
+            });
+            await fetchAccounts();
+        } catch (error) {
+            console.error('Error updating account:', error);
+            throw error;
+        }
+    };
+
+    const createDemoAccount = async () => {
+        try {
+            setLoading(true);
+            await fetchFromBackend('/api/dashboard/accounts/demo', {
+                method: 'POST',
+            });
+            await fetchAccounts();
+        } catch (error) {
+            console.error('Error creating demo account:', error);
+            throw error;
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <AccountContext.Provider value={{ selectedAccount, setSelectedAccount, accounts, loading, refreshAccounts: fetchAccounts }}>
+        <AccountContext.Provider value={{
+            selectedAccount,
+            setSelectedAccount,
+            accounts,
+            loading,
+            refreshAccounts: fetchAccounts,
+            updateAccount,
+            createDemoAccount
+        }}>
             {children}
         </AccountContext.Provider>
     );
